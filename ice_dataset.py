@@ -113,9 +113,8 @@ class IceDataset(Dataset):
                 return x, y, launch_dates
             
             except FileNotFoundError:
-                pass
+                print('No cached data')
 
-        print('No cached data')
         x, y = [], []
         launch_dates = []
         for year in years:

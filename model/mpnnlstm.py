@@ -230,7 +230,7 @@ class NextFramePredictor(ABC):
 
 class NextFramePredictorS2S(NextFramePredictor):
     def __init__(self,
-                 thresh,
+                 thresh=-np.inf,
                  experiment_name='experiment', 
                  directory='',
                  decompose=True, 

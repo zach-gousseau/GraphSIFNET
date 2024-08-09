@@ -118,17 +118,17 @@ CONVOLUTION_KWARGS = {
 }
 
 class GraphConv(nn.Module):
-    def __init__(self, convolution_type, in_channels, out_channels, n_layers):
+    def __init__(self, conv_type, in_channels, out_channels, n_layers):
 
         super(GraphConv, self).__init__()
 
-        self.convolution_type = convolution_type
+        self.conv_type = conv_type
         self.n_layers = n_layers
 
-        conv_func = CONVOLUTIONS[convolution_type]
-        conv_kwargs = CONVOLUTION_KWARGS[convolution_type]
+        conv_func = CONVOLUTIONS[conv_type]
+        conv_kwargs = CONVOLUTION_KWARGS[conv_type]
 
-        if convolution_type != 'Dummy':
+        if conv_type != 'Dummy':
             self.convolutions = nn.ModuleList(
                 [conv_func(in_channels, out_channels, **conv_kwargs)] + \
                 [conv_func(out_channels, out_channels, **conv_kwargs) for  _ in range(n_layers - 1)]
@@ -139,7 +139,7 @@ class GraphConv(nn.Module):
     
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None, return_attention_weights=False):
         for i in range(self.n_layers):
-            if return_attention_weights and self.convolution_type=='TransformerConv':# and x.shape[-1]==8:
+            if return_attention_weights and self.conv_type=='TransformerConv':# and x.shape[-1]==8:
                 import numpy as np
                 out, (edge_index, alpha) = self.convolutions[i](x, edge_index, edge_attr, return_attention_weights=True)
 
@@ -218,66 +218,66 @@ class GConvGRU(torch.nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_conv_layers: int = 1, 
-        convolution_type='GCNConv',
+        n_conv: int = 1, 
+        conv_type='GCNConv',
         name='GConvGRU'
     ):
         super(GConvGRU, self).__init__()
 
-        assert convolution_type in CONVOLUTIONS
+        assert conv_type in CONVOLUTIONS
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.n_conv_layers = n_conv_layers
-        self.convolution_type = convolution_type
+        self.n_conv = n_conv
+        self.conv_type = conv_type
         self._create_parameters_and_layers()
 
     def _create_update_gate_parameters_and_layers(self):
 
         self.conv_x_z = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.conv_h_z = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
     def _create_reset_gate_parameters_and_layers(self):
 
         self.conv_x_r = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.conv_h_r = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
     def _create_candidate_state_parameters_and_layers(self):
 
         self.conv_x_h = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.conv_h_h = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
     def _create_parameters_and_layers(self):
@@ -357,16 +357,16 @@ class GConvLSTM(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_conv_layers: int = 1, 
-        convolution_type='GCNConv',
+        n_conv: int = 1, 
+        conv_type='GCNConv',
         name='GConvLSTM'
     ):
         super(GConvLSTM, self).__init__()
 
-        assert convolution_type in CONVOLUTIONS
+        assert conv_type in CONVOLUTIONS
 
-        self.convolution_type = convolution_type
-        self.n_conv_layers = n_conv_layers
+        self.conv_type = conv_type
+        self.n_conv = n_conv
         self.return_attention_weights = False#True
         self.name = name
 
@@ -379,17 +379,17 @@ class GConvLSTM(nn.Module):
     def _create_input_gate_parameters_and_layers(self):
 
         self.conv_x_i = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.conv_h_i = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.w_c_i = Parameter(torch.Tensor(1, self.out_channels))
@@ -398,17 +398,17 @@ class GConvLSTM(nn.Module):
     def _create_forget_gate_parameters_and_layers(self):
 
         self.conv_x_f = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.conv_h_f = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.w_c_f = Parameter(torch.Tensor(1, self.out_channels))
@@ -417,17 +417,17 @@ class GConvLSTM(nn.Module):
     def _create_cell_state_parameters_and_layers(self):
 
         self.conv_x_c = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.conv_h_c = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.b_c = Parameter(torch.Tensor(1, self.out_channels))
@@ -435,17 +435,17 @@ class GConvLSTM(nn.Module):
     def _create_output_gate_parameters_and_layers(self):
 
         self.conv_x_o = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.conv_h_o = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.w_c_o = Parameter(torch.Tensor(1, self.out_channels))
@@ -559,15 +559,15 @@ class GConvLSTM_Simple(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_conv_layers: int = 1, 
-        convolution_type='GCNConv'
+        n_conv: int = 1, 
+        conv_type='GCNConv'
     ):
         super(GConvLSTM_Simple, self).__init__()
 
-        assert convolution_type in CONVOLUTIONS
+        assert conv_type in CONVOLUTIONS
 
-        self.convolution_type = convolution_type
-        self.n_conv_layers = n_conv_layers
+        self.conv_type = conv_type
+        self.n_conv = n_conv
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -577,17 +577,17 @@ class GConvLSTM_Simple(nn.Module):
 
     def _create_convolutions(self):
         self.conv_x = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
         self.conv_h = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
     def _create_input_gate_parameters_and_layers(self):
@@ -773,16 +773,16 @@ class SplitGConvLSTM(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_conv_layers: int = 1, 
-        convolution_type='GCNConv',
+        n_conv: int = 1, 
+        conv_type='GCNConv',
         name='SplitGConvLSTM'
     ):
         super(SplitGConvLSTM, self).__init__()
 
-        assert convolution_type in CONVOLUTIONS
+        assert conv_type in CONVOLUTIONS
 
-        self.convolution_type = convolution_type
-        self.n_conv_layers = n_conv_layers
+        self.conv_type = conv_type
+        self.n_conv = n_conv
         
         self.return_attention_weights = False#True
         self.name = name
@@ -793,10 +793,10 @@ class SplitGConvLSTM(nn.Module):
         self.rnn = nn.LSTM(out_channels, out_channels, 1)
 
         self.conv = GraphConv(
-            convolution_type=self.convolution_type,
+            conv_type=self.conv_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            n_layers = self.n_conv_layers
+            n_layers = self.n_conv
         )
 
     def forward(

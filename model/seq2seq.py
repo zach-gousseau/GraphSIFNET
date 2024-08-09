@@ -28,7 +28,7 @@ class NoGConvLSTM(nn.LSTM):
 
 
 class Encoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, dummy=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, conv_type='GCNConv', rnn_type='LSTM', n_conv=3, dummy=False):
         super().__init__()
 
         assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM', 'NoConvLSTM']
@@ -49,8 +49,8 @@ class Encoder(torch.nn.Module):
 
         if not self.dummy:
             self.rnns = nn.ModuleList(
-                [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='encoder')] + \
-                [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='encoder') for _ in range(n_layers-1)]
+                [rnn(input_features, hidden_size, conv_type=conv_type, n_conv=n_conv, name='encoder')] + \
+                [rnn(hidden_size, hidden_size, conv_type=conv_type, n_conv=n_conv, name='encoder') for _ in range(n_layers-1)]
             )
         
         self.dropout = nn.Dropout(dropout)
@@ -93,7 +93,7 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, concat_layers_dim=3, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, binary=False, dummy=False, multitask=True):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, concat_layers_dim=3, conv_type='GCNConv', rnn_type='LSTM', n_conv=3, binary=False, dummy=False, multitask=True):
         super().__init__()
 
         assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM', 'NoConvLSTM']
@@ -117,23 +117,23 @@ class Decoder(torch.nn.Module):
         self.dummy = dummy
         self.multitask = multitask
 
-        n_conv_layers = 1  # Hard-coded single convolutional layer in the decoder (TODO: make this not hard coded.)
+        n_conv = 1  # Hard-coded single convolutional layer in the decoder (TODO: make this not hard coded.)
 
         if not self.dummy:
             if rnn_type == 'NoConvLSTM':
                 self.rnns = nn.ModuleList([NoGConvLSTM(input_features, hidden_size, 1)] +  [NoGConvLSTM(hidden_size, hidden_size, 1) for _ in range(n_layers-1)]).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
             else:
                 self.rnns = nn.ModuleList(
-                    [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder')] + \
-                    [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder') for _ in range(n_layers-1)]
+                    [rnn(input_features, hidden_size, conv_type=conv_type, n_conv=n_conv, name='decoder')] + \
+                    [rnn(hidden_size, hidden_size, conv_type=conv_type, n_conv=n_conv, name='decoder') for _ in range(n_layers-1)]
                     )
 
         # Dummy convolutions don't project the data into a new dimensionality
-        # in_channels = hidden_size + 0 + concat_layers_dim if not (dummy or convolution_type=='Dummy') else 3 + 0 + concat_layers_dim
-        in_channels = hidden_size + 0 + 0 if not (dummy or convolution_type=='Dummy') else 3 + 0 + 0
+        # in_channels = hidden_size + 0 + concat_layers_dim if not (dummy or conv_type=='Dummy') else 3 + 0 + concat_layers_dim
+        in_channels = hidden_size + 0 + 0 if not (dummy or conv_type=='Dummy') else 3 + 0 + 0
 
-        conv_func = CONVOLUTIONS[convolution_type]
-        conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
+        conv_func = CONVOLUTIONS[conv_type]
+        conv_func_kwargs = CONVOLUTION_KWARGS[conv_type]
         
         # self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
         # self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
@@ -206,7 +206,7 @@ class Decoder(torch.nn.Module):
         # Pass output through the final GNN to reduce to desired dimensionality
         output = self.mlp_out(output, edge_index, edge_weight)
 
-        # Squeeze everything to (-1, 1)  # TODO REMOVE THIS BANDAID
+        # Squeeze everything to (-1, 1) 
         if not self.multitask:
             output = torch.tanh(output)
         
@@ -260,11 +260,11 @@ class Seq2Seq(torch.nn.Module):
                  input_features=4, #3 node_size
                  output_timesteps=5,
                  n_layers=4,
-                 n_conv_layers=2,
+                 n_conv=2,
                  transform_func=None,
                  condition='max_larger_than',
                  remesh_input=False,
-                 convolution_type='ChebConv',
+                 conv_type='ChebConv',
                  rnn_type='LSTM',
                  binary=False,
                  image_shape=None,
@@ -279,9 +279,9 @@ class Seq2Seq(torch.nn.Module):
             hidden_size,
             dropout,
             n_layers=n_layers,
-            convolution_type=convolution_type,
+            conv_type=conv_type,
             rnn_type=rnn_type,
-            n_conv_layers=n_conv_layers,
+            n_conv=n_conv,
             dummy=dummy,
             )
         self.decoder_1 = Decoder(
@@ -290,23 +290,24 @@ class Seq2Seq(torch.nn.Module):
             dropout,
             n_layers=n_layers,
             concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
-            convolution_type=convolution_type,
+            conv_type=conv_type,
             rnn_type=rnn_type,
-            n_conv_layers=n_conv_layers,
+            n_conv=n_conv,
             binary=binary,
             dummy=dummy,
             multitask=multitask
             )
         
+        # this was previously used to have multiple decoders for different forecast steps
         # self.decoder_2 = Decoder(
         #     1+3,  # 1 output variable + 3 (positional encoding and node_size)
         #     hidden_size,
         #     dropout,
         #     n_layers=n_layers,
         #     concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
-        #     convolution_type=convolution_type,
+        #     conv_type=conv_type,
         #     rnn_type=rnn_type,
-        #     n_conv_layers=n_conv_layers,
+        #     n_conv=n_conv,
         #     binary=binary,
         #     dummy=dummy,
         #     )
@@ -317,9 +318,9 @@ class Seq2Seq(torch.nn.Module):
         #     dropout,
         #     n_layers=n_layers,
         #     concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
-        #     convolution_type=convolution_type,
+        #     conv_type=conv_type,
         #     rnn_type=rnn_type,
-        #     n_conv_layers=n_conv_layers,
+        #     n_conv=n_conv,
         #     binary=binary,
         #     dummy=dummy,
         #     )
@@ -333,11 +334,11 @@ class Seq2Seq(torch.nn.Module):
         self.debug = debug
         self.image_shape = image_shape
 
-        self.convolution_type = convolution_type
+        self.conv_type = conv_type
         self.multitask = multitask
 
         # These convolutions can accept edge attributes, the others cannot.
-        if convolution_type in ['MHTransformerConv', 'TransformerConv', 'GATConv']:
+        if conv_type in ['MHTransformerConv', 'TransformerConv', 'GATConv']:
             self.use_edge_attrs = True
         else:
             self.use_edge_attrs = False
@@ -465,7 +466,6 @@ class Seq2Seq(torch.nn.Module):
                     memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB
                     print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
-            # Note that we've removed the concatenation (for now), uncomment to add back in.
             if concat_layers is not None:
                 # concat_layers_t = torch.cat([self.graph.persistence, concat_layers[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
                 concat_layers_t = torch.cat([concat_layers[t], (torch.ones_like(concat_layers[t]) * t)/self.output_timesteps], dim=-1)

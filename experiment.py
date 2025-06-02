@@ -89,7 +89,7 @@ if __name__ == '__main__':
     input_features = len(x_vars)
     rnn_type = 'NoConvLSTM'  # LSTM, GRU, 
     
-    cache_dir = '/home/zgoussea/scratch/data_cache/'
+    cache_dir = '/path/to/data_cache/'
     
     test = False
     

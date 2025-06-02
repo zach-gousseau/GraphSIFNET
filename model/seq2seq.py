@@ -66,24 +66,24 @@ class Encoder(torch.nn.Module):
         X = X.squeeze(0)
 
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
-        # hidden_layer = self.dropout(hidden_layer)
+        hidden_layer = self.dropout(hidden_layer)
 
-        # hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
+        hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
 
         # First layer
         hidden_layer = self.norm_h(hidden_layer)
-        # if self.rnn_type != 'GRU':
-            # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
+        if self.rnn_type != 'GRU':
+            cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
         # Subsequent layers
         hidden, cell = [hidden_layer], [cell_layer]
         for i in range(1, self.n_layers):
             _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=None, C=None)
-            # hidden_layer = self.dropout(hidden_layer)
+            hidden_layer = self.dropout(hidden_layer)
 
-            # hidden_layer = self.norm_h(hidden_layer)
-            # if self.rnn_type != 'GRU':
-                # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
+            hidden_layer = self.norm_h(hidden_layer)
+            if self.rnn_type != 'GRU':
+                cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
@@ -135,14 +135,11 @@ class Decoder(torch.nn.Module):
         conv_func = CONVOLUTIONS[conv_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[conv_type]
         
-        # self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
-        # self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
-        # self.fc_out3 = Linear(in_channels=hidden_size, out_channels=1)
         outdim = 2 if self.multitask else 1
         self.gnn_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, **conv_func_kwargs)
-        # self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
         self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=outdim, **conv_func_kwargs)  # MULTITASK
         
+        # Uncomment to initialize weights to 0
         # torch.nn.init.zeros_(self.fc_out1.weight)
         # torch.nn.init.zeros_(self.fc_out1.bias)
         # torch.nn.init.zeros_(self.fc_out2.weight)
@@ -151,8 +148,6 @@ class Decoder(torch.nn.Module):
         # torch.nn.init.zeros_(self.fc_out3.bias)
         
         self.gnn1 = conv_func(in_channels=concat_layers_dim, out_channels=hidden_size, **conv_func_kwargs)
-        # self.gnn2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
-        # self.gnn2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
 
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -170,12 +165,12 @@ class Decoder(torch.nn.Module):
         
         # First layer
         output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[0], C=C[0])
-        # hidden_layer = self.dropout(hidden_layer)
-        # output = self.dropout(output)
+        hidden_layer = self.dropout(hidden_layer)
+        output = self.dropout(output)
 
         hidden_layer = self.norm_h(hidden_layer)
-        # if self.rnn_type != 'GRU':
-            # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
+        if self.rnn_type != 'GRU':
+            cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
         # Subsequent layers
         hidden, cell = [hidden_layer], [cell_layer]
@@ -183,8 +178,9 @@ class Decoder(torch.nn.Module):
             output, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=H[i], C=C[i])
 
             hidden_layer = self.norm_h(hidden_layer)
-            # if self.rnn_type != 'GRU':
-                # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
+            
+            if self.rnn_type != 'GRU':
+                cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
@@ -193,14 +189,11 @@ class Decoder(torch.nn.Module):
         cell = torch.stack(cell) if self.rnn_type != 'GRU' else [None]*len(hidden)  # GRU does not have a cell state
 
         # Use top layer's output
-        # output = self.norm_o(output)
         output = F.leaky_relu(output)
 
         # Concatenate with the concat layers
         if concat_layers is not None:
             gnn_output = self.gnn(concat_layers, edge_index, edge_weight)
-            # output = torch.cat([output, gnn_output, concat_layers], dim=-1)
-            # output = torch.cat([output, concat_layers], dim=-1)
             output = output + gnn_output
 
         # Pass output through the final GNN to reduce to desired dimensionality
@@ -211,18 +204,13 @@ class Decoder(torch.nn.Module):
             output = torch.tanh(output)
         
         # Add to previous step's SIC map, OR to the launch date's SIC map (not used)
-        # output = output + X[:, [0]]  
-        # output = output + concat_layers[:, [0]]
         output = output + y_initial
-        # output[..., 1] = torch.clamp(output[..., 1], min=0, max=1) 
         
         # MULTITASK
         if self.multitask:
             sic = torch.sigmoid(output[..., [0]])
             sip = output[..., [1]]
             output = torch.cat((sic, sip), dim=-1)
-
-        # output = torch.sigmoid(output)
 
         if self.binary:
             output = torch.sigmoid(output)
@@ -235,20 +223,11 @@ class Decoder(torch.nn.Module):
         x = self.dropout(x)
         x = self.gnn_out2(x, edge_index, edge_weight)
         x = self.dropout(x)
-        # x = F.leaky_relu(x)
-        # x = self.gnn_out3(x, edge_index, edge_weight)
-        # x = self.dropout(x)
         return x
     
     def gnn(self, x, edge_index, edge_weight):
-        # print(x.shape)
-        # print(self.gnn1)
         x = self.gnn1(x, edge_index, edge_weight)
         x = F.leaky_relu(x)
-        # x = self.gnn2(x, edge_index, edge_weight)
-        # x = F.leaky_relu(x)
-        # x = self.gnn3(x, edge_index, edge_weight)
-        # x = F.leaky_relu(x)
         return x        
 
 class Seq2Seq(torch.nn.Module):
@@ -289,7 +268,7 @@ class Seq2Seq(torch.nn.Module):
             hidden_size,
             dropout,
             n_layers=n_layers,
-            concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
+            concat_layers_dim=2,
             conv_type=conv_type,
             rnn_type=rnn_type,
             n_conv=n_conv,
@@ -304,7 +283,7 @@ class Seq2Seq(torch.nn.Module):
         #     hidden_size,
         #     dropout,
         #     n_layers=n_layers,
-        #     concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
+        #     concat_layers_dim=2,
         #     conv_type=conv_type,
         #     rnn_type=rnn_type,
         #     n_conv=n_conv,
@@ -317,7 +296,7 @@ class Seq2Seq(torch.nn.Module):
         #     hidden_size,
         #     dropout,
         #     n_layers=n_layers,
-        #     concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
+        #     concat_layers_dim=2,
         #     conv_type=conv_type,
         #     rnn_type=rnn_type,
         #     n_conv=n_conv,
@@ -351,9 +330,6 @@ class Seq2Seq(torch.nn.Module):
 
     def process_inputs(self, x, mask=None, high_interest_region=None, graph_structure=None):
 
-        # num_samples, w, h, c = x.shape
-        # image_shape = self.image_shape
-
         self.mask = mask
         
         # Create the graph structure if one is not already pre-defined, otherwise use the pre-defined structure
@@ -384,12 +360,6 @@ class Seq2Seq(torch.nn.Module):
                     use_edge_attrs=self.use_edge_attrs
                     )
         else:
-            # x = add_positional_encoding(x)
-            # data = flatten(x, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
-            # node_sizes = torch.Tensor(graph_structure['n_pixels_per_node']) / ((4/2)**2)  # TODO: Don't assume 4 !!
-            # node_sizes = node_sizes.repeat((x.shape[0], *[1]*len(node_sizes.shape)))
-            # data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
-            # graph_structure['data'] = data
             graph_structure['data'] = x
 
         # Create Graph object, add data to pyg Data object
@@ -428,7 +398,6 @@ class Seq2Seq(torch.nn.Module):
                     self.graph.hidden = hidden
                     self.graph.cell = cell
 
-        # self.graph.hidden = self.dropout(self.graph.hidden)
         # Persistance (removed for now)
         self.graph.persistence = x[-1, :, [0]]
         
@@ -439,8 +408,6 @@ class Seq2Seq(torch.nn.Module):
         if self.multitask:
             self.graph.pyg.x = torch.cat([(self.graph.pyg.x[..., [0]] > 0.15).float(), self.graph.pyg.x], -1)
             self.graph.pyg.x = self.graph.pyg.x[:, [1, 0, 2, 3, 4]]
-        
-        # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]
 
 
     def unroll_output(self, unroll_steps, y, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, high_interest_region=None, remesh_every=1):
@@ -467,17 +434,14 @@ class Seq2Seq(torch.nn.Module):
                     print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
             if concat_layers is not None:
-                # concat_layers_t = torch.cat([self.graph.persistence, concat_layers[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
                 concat_layers_t = torch.cat([concat_layers[t], (torch.ones_like(concat_layers[t]) * t)/self.output_timesteps], dim=-1)
-                # concat_layers_t = concat_layers[t].unsqueeze(0)
-                # concat_layers_t = flatten(concat_layers_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
                 self.graph.concat_layers = concat_layers_t
             else:
                 concat_layers_t = None
                 
             self.graph.pyg.to(self.device)
 
-            # Perform decoding step
+            # Perform decoding step -- uncomment to use multiple decoders for different forecast steps
             # if t < 5:
             #     decoder = self.decoder_1
             # elif t < 15:
@@ -491,8 +455,7 @@ class Seq2Seq(torch.nn.Module):
                 edge_index=self.graph.pyg.edge_index,
                 edge_weight=self.graph.pyg.edge_attr, 
                 concat_layers=self.graph.concat_layers if hasattr(self.graph, 'concat_layers') else None,
-                # y_initial=self.graph.pyg.x[:, :1] if not self.multitask else self.graph.pyg.x[:, :2],#self.graph.persistence,  # MULTITASK
-                y_initial=self.graph.persistence if not self.multitask else self.graph.pyg.x[:, :2],#self.graph.persistence,  # TODO: REMOVE THIS BANDAID
+                y_initial=self.graph.persistence if not self.multitask else self.graph.pyg.x[:, :2],
                 H=self.graph.hidden, 
                 C=self.graph.cell
                 )
@@ -519,6 +482,7 @@ class Seq2Seq(torch.nn.Module):
         # Encoder
         self.process_inputs(x, mask=mask, high_interest_region=high_interest_region, graph_structure=graph_structure)
         
+        # Uncomment to use different unroll steps for different epochs
         # if self.training and self.epoch < 2:
         #     unroll_steps = range(5)
         # elif self.training and self.epoch < 4:
@@ -527,8 +491,6 @@ class Seq2Seq(torch.nn.Module):
         #     unroll_steps = range(45)
         # else:
         #     unroll_steps = range(self.output_timesteps)
-            
-        # unroll_steps = range(self.output_timesteps)
 
         # Decoder
         outputs, output_mappings = self.unroll_output(
@@ -547,9 +509,6 @@ class Seq2Seq(torch.nn.Module):
         if teacher_force:
             pos_encoding = self.graph.pyg.x[..., 1:]
             self.graph.pyg.x = torch.cat([teacher_input.squeeze(0), pos_encoding], dim=-1)
-            # teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
-            # self.graph.pyg.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
-            # self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
             pos_encoding = self.graph.pyg.x[..., 1:]  if not self.multitask else self.graph.pyg.x[..., 2:] # MULTITASK
@@ -605,7 +564,6 @@ class Seq2Seq(torch.nn.Module):
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
         # Update the graph for the next rollout 
-        # self.graph = Graph(graph_structure['edge_index'], graph_structure['edge_attrs'])
         self.graph.pyg.edge_index = graph_structure['edge_index']
         self.graph.pyg.edge_attr = graph_structure['edge_attrs']
         self.graph.pyg.x = graph_structure['data'].squeeze(0)

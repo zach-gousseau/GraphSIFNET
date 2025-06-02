@@ -501,7 +501,7 @@ def get_adj_pixelwise(labels, xx=None, yy=None, use_edge_attrs=True, resolution=
             dist(edge_index[0], edge_index[1], xx, yy)
         )).T
     else:
-        edge_attrs = None#torch.ones(neighbors.shape[1])
+        edge_attrs = None
 
     return edge_index, edge_attrs
     
@@ -586,7 +586,7 @@ def get_mapping(labels):
     graph_nodes, n_pixels_per_node = np.unique(row, return_counts=True)
     n_pixels_per_node = torch.Tensor(n_pixels_per_node)
     
-    mapping = torch.sparse_coo_tensor((row, col), data, size=(graph_nodes[-1]+1, len(labels_flat)))#.to_dense()
+    mapping = torch.sparse_coo_tensor((row, col), data, size=(graph_nodes[-1]+1, len(labels_flat)))
     return mapping, graph_nodes, n_pixels_per_node
 
 
@@ -650,7 +650,6 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, high_interest_
 
     mapping, graph_nodes, n_pixels_per_node = get_mapping(labels)
     mapping = mapping.to_dense()
-    # mapping, n_pixels_per_node = mapping.to(img.device).type(img.dtype), n_pixels_per_node.to(img.device).type(img.dtype)
     mapping, n_pixels_per_node = mapping.to(img.device), n_pixels_per_node.to(img.device)
     data = flatten(img, mapping, n_pixels_per_node)
 
@@ -658,7 +657,6 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, high_interest_
         raise ValueError(f'Found NaNs in graph data {torch.sum(torch.isnan(data))} / {np.prod(data.shape)}')
     
     xx, yy = data[0, ..., -2]*image_shape[1]*resolution, data[0, ..., -1]*image_shape[0]*resolution
-    # xx, yy = xx.detach().cpu(), yy.detach().cpu()
     
     # Get sizes for each graph node 
     cell_sizes = n_pixels_per_node  # TODO: scale by latitude
@@ -746,16 +744,3 @@ def create_static_homogeneous_graph(image_shape, max_grid_size, mask, high_inter
     graph_structure['mapping'] = torch.Tensor(graph_structure['mapping']).to(device)
     
     return graph_structure
-
-"""
-import torch 
-A = torch.Tensor(
-    [[1, 2, 3],
-    [4, 5, 6],
-    [7, 8, 9]]
-).to_sparse()
-v = torch.Tensor([1, 0, 1])
-v = v.to_sparse()
-X = A@v
-
-"""

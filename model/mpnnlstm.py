@@ -107,18 +107,6 @@ class MSE_Sobel(nn.Module):
         loss = 0.01*self.sobel(output.moveaxis(-1, 1), target.moveaxis(-1, 1), mask) + self.mse(output, target, mask)
         return loss
     
-# class MSE_SIP(nn.Module):
-#     def __init__(self):
-#         super(MSE_SIP, self).__init__()
-#         self.mse = torch.nn.MSELoss()
-        
-#     def sip_loss(self, pred, true):
-#         return 1
-        
-#     def forward(self, output, target):
-#         loss = self.sip_loss(output, target) + self.mse(output, target)
-#         return loss
-    
 class MSE_SIP(nn.Module):
     def __init__(self):
         super(MSE_SIP, self).__init__()
@@ -130,7 +118,7 @@ class MSE_SIP(nn.Module):
         if mask is not None:
             output, target = output[:, ~mask], target[:, ~mask]
         # alpha_tensor = ((target < 0.15) | (target > 0.85)) * (alpha-1) + 1
-        alpha_tensor = self.weight_func(target)
+        # alpha_tensor = self.weight_func(target)
         # output = torch.sigmoid(output)
         loss = (output - target) ** 2
         # loss = (loss * alpha_tensor)
@@ -141,7 +129,6 @@ class MSE_SIP(nn.Module):
 class BCE(nn.Module):
     def __init__(self):
         super(BCE, self).__init__()
-        # self.bce = torch.nn.BCELoss(reduction='none')
         self.bce = torch.nn.BCEWithLogitsLoss(reduction='none')
         
     def forward(self, output, target, mask=None, weights=None):
@@ -323,20 +310,11 @@ class NextFramePredictorS2S(NextFramePredictor):
             self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth'), map_location=torch.device('cpu')))
 
     def initiate_training(self, lr, lr_decay, mask):
-        # self.loss_func = MSE_NIIEE() if not self.binary else torch.nn.BCELoss()
-        # self.loss_func_name = 'MSE+0.1NIEE' if not self.binary else 'BCE'  # For printing
-        
-        # self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
-        # self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
-        
-        # self.loss_func = MSE_weighted() if not self.binary else torch.nn.BCELoss()
-        # self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
         
         self.loss_func = MSE_SIP_bin_sep() if not self.binary else torch.nn.BCELoss()
-        self.loss_func_name = 'MSE_SSIM' if not self.binary else 'BCE'  # For printing
+        self.loss_func_name = 'MSE_SSIM' if not self.binary else 'BCE'
         
-        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.01)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)#, weight_decay=0.001)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
 
         self.scaler = amp.GradScaler()  # Not used 
@@ -372,10 +350,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         # Initialize training only if it's the first train() call
         if not self.training_initiated:
             self.initiate_training(lr, lr_decay, mask)
-
-        # if mask is not None:
-            # assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
-
+            
         # Training loop
         st = time.time()
         batch_step = 0
@@ -411,7 +386,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                             high_interest_region=high_interest_region,
                             graph_structure=graph_structure
                             )
-                        # print(y_hat[0].dtype, y_hat_mappings[0].dtype)
+
                         # with amp.autocast(enabled=False):
                         #     if graph_structure is not None:
                         #         y_hat = unflatten(torch.stack(y_hat), graph_structure['mapping'], image_shape, mask)
@@ -443,17 +418,17 @@ class NextFramePredictorS2S(NextFramePredictor):
                         # self.optimizer.step()
 
                     if self.debug:
-                        # decoder_params = [p for p in self.model.decoder.parameters()]
-                        # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
-                        # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
-                        # self.writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), batch_step)
-                        # self.writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), batch_step)
+                        decoder_params = [p for p in self.model.decoder.parameters()]
+                        decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
+                        decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
+                        self.writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), batch_step)
+                        self.writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), batch_step)
 
-                        # encoder_params = [p for p in self.model.encoder.parameters()]
-                        # encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
-                        # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
-                        # self.writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), batch_step)
-                        # self.writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), batch_step)
+                        encoder_params = [p for p in self.model.encoder.parameters()]
+                        encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
+                        encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
+                        self.writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), batch_step)
+                        self.writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), batch_step)
 
                         en_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.encoder.parameters() if param.grad is not None]))
                         de_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.decoder.parameters() if param.grad is not None]))
@@ -490,10 +465,10 @@ class NextFramePredictorS2S(NextFramePredictor):
                         y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(len(y_hat))]
                         y_hat = torch.stack(y_hat, dim=0)
                         
-                        # loss = self.loss_func(y_hat[:, ~mask], y[unroll_steps][:, ~mask])  
                         loss = self.loss_func(y_hat, y[unroll_steps])  
                         loss.backward(retain_graph=True)
 
+                        # Uncomment to clip gradients
                         # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=.5)
 
                         del y_hat, y_hat_mappings
@@ -531,6 +506,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                             high_interest_region=high_interest_region,
                             graph_structure=graph_structure_test if graph_structure_test is not None else graph_structure
                             )
+                        
                         # with amp.autocast(enabled=False):
                         #     if graph_structure is not None:
                         #         y_hat = unflatten(torch.stack(y_hat), graph_structure['mapping'], image_shape, mask)
@@ -538,7 +514,6 @@ class NextFramePredictorS2S(NextFramePredictor):
                         #         y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                         #         y_hat = torch.stack(y_hat, dim=0)
                     
-                        # loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
                         y_hat = torch.stack(y_hat, dim=0)
                         loss = self.loss_func(y_hat,
                                               y,
@@ -560,10 +535,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 self.min_loss = running_loss_test
 
             if np.isnan(running_loss_test.item()):
-                raise ValueError('NaN loss :(')
-
-            # if running_loss_test.item() > 4:
-            #     raise ValueError('Diverged :(')
+                raise ValueError('Loss has diverged. Terminating.')
 
             self.writer.add_scalar("Loss/test", running_loss_test.item(), epoch)
 
@@ -630,7 +602,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 
                 y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
                 
-                y_hat = np.stack(y_hat)#.squeeze(1)
+                y_hat = np.stack(y_hat)
                 
                 y_pred.append(y_hat)
 

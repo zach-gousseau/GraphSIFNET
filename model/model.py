@@ -10,12 +10,7 @@ from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn import GCNConv, ChebConv, TransformerConv, GATConv, GATv2Conv, GINEConv
 from torch_geometric.nn.inits import glorot, zeros
 
-import warnings
-import copy
-import sys
 import math
-
-from torch_geometric.utils import softmax
 
 class DummyLSTM(MessagePassing):
 
@@ -139,7 +134,9 @@ class GraphConv(nn.Module):
     
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None, return_attention_weights=False):
         for i in range(self.n_layers):
-            if return_attention_weights and self.conv_type=='TransformerConv':# and x.shape[-1]==8:
+            
+            # For returning and visualizing attention weights -- not used in training.
+            if return_attention_weights and self.conv_type=='TransformerConv':
                 import numpy as np
                 out, (edge_index, alpha) = self.convolutions[i](x, edge_index, edge_attr, return_attention_weights=True)
 
@@ -157,17 +154,11 @@ class GraphConv(nn.Module):
 
                 for a, to_node in zip(alpha, to_nodes):
                     att_map_to[to_node] += a
-                    # att_map_to_i[to_node] += 1
-                    
-                # att_map_from = att_map_from / att_map_from_i
                 
                 att_map_from_i = torch.zeros(size=(x.shape[0], 1), dtype=torch.float32)
                 n, c = torch.unique(edge_index[0], return_counts=True)
                 for from_node, count_ in zip(n, c):
                     att_map_from_i[from_node] = count_
-
-                # att_map_to = att_map_to / att_map_to_i
-                # att_map_from = att_map_from / att_map_from_i
 
                 with open(f'scratch/attention_maps_{i}.npy', 'wb') as f:
                     np.save(f, np.array(alpha))
@@ -175,7 +166,7 @@ class GraphConv(nn.Module):
                     np.save(f, np.array(att_map_from))
                     np.save(f, np.array(att_map_to))
 
-                raise NotImplementedError('Asked for attention weights.')
+                raise NotImplementedError('Attention weights saved. Terminating.')
                 
             x = self.convolutions[i](x, edge_index, edge_attr)
         return x
@@ -705,12 +696,6 @@ class MPNNLSTM(nn.Module):
         self.convolution1 = GCNConv(input_features, hidden_size)
         self.convolution2 = GCNConv(hidden_size, hidden_size)
         self.convolution3 = GCNConv(hidden_size, hidden_size)
-        # self.convolution4 = GCNConv(hidden_size, hidden_size)
-        
-        # self.bn1 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
-        # self.bn2 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
-        # self.bn3 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
-        # self.bn4 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
 
         self.bn1 = nn.LayerNorm(hidden_size)
         self.bn2 = nn.LayerNorm(hidden_size)
@@ -720,8 +705,6 @@ class MPNNLSTM(nn.Module):
 
         self.lin1 = nn.Linear(hidden_size+input_timesteps, hidden_size)
         self.lin2 = nn.Linear(hidden_size, output_features)
-
-        # self.lin1 = nn.Linear(hidden_size+input_timesteps, 1)
 
 
     def forward(self, X, edge_index, edge_weight=None):
@@ -741,9 +724,6 @@ class MPNNLSTM(nn.Module):
             H = self.bn3(H)
             H = F.dropout(H, p=self.dropout, training=self.training)
 
-            # H = F.relu(self.convolution4(H, edge_index, edge_weight=edge_weight))
-            # H = self.bn4(H)
-            # H = F.dropout(H, p=self.dropout, training=self.training)
             C.append(H)
 
         C = torch.stack(C)
@@ -760,12 +740,10 @@ class MPNNLSTM(nn.Module):
         H = self.lin1(H)
         H = F.relu(H)
         H = self.lin2(H)
-        # H = F.relu(H)
         
         # Dropout and sigmoid out
         H = F.dropout(H, p=self.dropout, training=self.training)
         H = torch.sigmoid(H)
-        # H = F.relu(H)
         return H
 
 class SplitGConvLSTM(nn.Module):
@@ -784,7 +762,7 @@ class SplitGConvLSTM(nn.Module):
         self.conv_type = conv_type
         self.n_conv = n_conv
         
-        self.return_attention_weights = False#True
+        self.return_attention_weights = False  # Set to True to return attention weights and terminate early.
         self.name = name
 
         self.in_channels = in_channels
@@ -816,20 +794,13 @@ class SplitGConvLSTM(nn.Module):
 class MPNNLSTMI(nn.Module):
     def __init__(self, hidden_size, dropout, input_timesteps=3, input_features=4, n_layers=2, output_features=1):
         super(MPNNLSTMI, self).__init__()
-        # self.recurrent_1 = GConvLSTM(input_features, hidden_size)
-        # self.recurrent_2 = GConvLSTM(hidden_size, hidden_size)
 
         self.recurrents = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
 
         self.bn1 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
-        # self.bn2 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
-        # self.bn3 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
-        # self.bn4 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
 
         self.lin1 = nn.Linear(hidden_size, hidden_size)
         self.lin2 = nn.Linear(hidden_size, output_features)
-
-        # self.lin1 = nn.Linear(hidden_size, 1)
 
         self.dropout = dropout
 
@@ -857,35 +828,7 @@ class MPNNLSTMI(nn.Module):
         x = self.bn1(x)
         x = self.lin1(x)
         x = F.relu(x)
-        # x = self.bn1(x)
         x = self.lin2(x)
-        # x = torch.sigmoid(x)
-        # x = F.relu(x)
-        # x = self.lin2(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = torch.sigmoid(x)
-
-
-
-        # for x in X:
-        #     _, h1, c1 = self.recurrent_1(x, edge_index, edge_weight, H=h1, C=c1)
-        #     # h1 = self.bn1(h1)
-        #     # c1 = self.bn2(c1)
-        #     # Feed hidden state output of first layer to the 2nd layer
-        #     _, h2, c2 = self.recurrent_2(h1, edge_index, edge_weight, H=h2, C=c2)
-        #     # h2 = self.bn3(h2)
-        #     # c2 = self.bn4(c2)
-
-        # # Use the final hidden state output of 2nd recurrent layer for input to classifier
-        # x = F.relu(h2)
-        # x = self.bn1(x)
-        # x = self.lin1(x)
-        # x = F.relu(x)
-        # # x = self.bn1(x)
-        # x = self.lin2(x)
-        # # x = torch.sigmoid(x)
-        # # x = F.relu(x)
-        # # x = self.lin2(x)
-        # x = F.dropout(x, p=self.dropout, training=self.training)
-        # x = torch.sigmoid(x)
         return x
